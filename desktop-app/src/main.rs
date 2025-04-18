@@ -1,6 +1,12 @@
-mod counter;
-use crate::counter::Counter;
+mod canvas;
+use iced::window::{self, Settings};
+
+use crate::canvas::Canvas;
 
 fn main() -> iced::Result {
-  iced::run("A cool counter", Counter::update, Counter::view)
+  iced::application(Canvas::title, Canvas::update, Canvas::view)
+    .window(Settings {
+      ..Default::default()
+    })
+    .run()
 }
