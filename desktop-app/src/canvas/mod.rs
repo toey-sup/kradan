@@ -23,7 +23,7 @@ pub enum Message {
 
 impl Canvas {
   pub fn title(&self) -> String {
-    String::from("Dao Kum")
+    String::from("Kradan")
   }
 
   pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -31,25 +31,26 @@ impl Canvas {
       Message::MouseClick(point) => {
         self.main_program.is_drawing = true;
         self.main_program.add_point(point);
-        Task::done(Message::MouseClick(point))
       }
       Message::MouseLeave => {
-        self.main_program.is_drawing = false;
-        self.main_program.complete_stroke();
-        Task::done(Message::MouseLeave)
+        if self.main_program.is_drawing {
+          self.main_program.is_drawing = false;
+          self.main_program.complete_stroke();
+        }
       }
       Message::MouseMove(point) => {
         if self.main_program.is_drawing {
           self.main_program.add_point(point);
         }
-        Task::done(Message::MouseMove(point))
       }
       Message::MouseUp => {
-        self.main_program.is_drawing = false;
-        self.main_program.complete_stroke();
-        Task::done(Message::MouseUp)
+        if self.main_program.is_drawing {
+          self.main_program.is_drawing = false;
+          self.main_program.complete_stroke();
+        }
       }
     }
+    Task::none()
   }
 
   pub fn view(&self) -> Element<Message> {
@@ -91,9 +92,11 @@ impl MainCanvasProgram {
   }
 
   pub fn complete_stroke(&mut self) {
-    self.points_set.push(self.current_stroke.points.clone());
-    self.current_stroke = Line::new();
-    self.main_cache.clear();
+    if self.current_stroke.points.len() > 0 {
+      self.points_set.push(self.current_stroke.points.clone());
+      self.current_stroke = Line::new();
+      self.main_cache.clear();
+    }
   }
 }
 
@@ -113,6 +116,7 @@ impl canvas::Program<Message> for MainCanvasProgram {
 
     match event {
       Event::Mouse(mouse_event) => {
+        println!("{:?}", mouse_event);
         let message = match mouse_event {
           mouse::Event::ButtonPressed(mouse::Button::Left) => {
             Option::Some(Message::MouseClick(cursor_position))
@@ -141,9 +145,9 @@ impl canvas::Program<Message> for MainCanvasProgram {
         Line::draw_from_points(frame, points);
       }
     });
-    let mut current_stroke_geometry = self.current_stroke.draw(renderer, bounds);
-    current_stroke_geometry.push(main_geometry);
-    return current_stroke_geometry;
+    let mut geometries = self.current_stroke.draw(renderer, bounds);
+    geometries.push(main_geometry);
+    return geometries;
   }
 
   fn mouse_interaction(

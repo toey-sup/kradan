@@ -39,30 +39,36 @@ impl Line {
 
   pub fn add_point(&mut self, point: Point) {
     self.points.push(point);
-    let last_segment_index = self.segments.len() - 1;
-    let last_segment = &mut self.segments[last_segment_index];
-    if last_segment.points.len() >= MAX_CACHE_SIZE {
+    let last_segment_index: usize = self.segments.len() - 1;
+    if self.segments[last_segment_index].points.len() >= MAX_CACHE_SIZE {
       let mut new_segment = LineSegment::with_group(self.cache_group);
       new_segment.points.push(point);
       self.segments.push(new_segment);
+    } else {
+      self.segments[last_segment_index].points.push(point);
+      self.segments[last_segment_index].caches.clear();
     }
-    last_segment.points.push(point);
   }
 
   pub fn draw_from_points(frame: &mut Frame<Renderer>, points: &Vec<Point>) {
-    for i in 1..points.len() {
-      let from = points[i - 1];
-      let to = points[i];
-      let line = canvas::Path::line(from, to);
-      frame.stroke(
-        &line,
-        Stroke::default()
-          .with_width(20.00)
-          .with_color(Color::BLACK)
-          .with_line_join(canvas::LineJoin::Round)
-          .with_line_cap(canvas::LineCap::Round),
-      );
-      frame.fill(&line, Color::BLACK);
+    if points.len() == 1 {
+      let circle = canvas::Path::circle(points[0], 10.00);
+      frame.fill(&circle, Color::BLACK);
+    } else {
+      for i in 1..points.len() {
+        let from = points[i - 1];
+        let to = points[i];
+        let line = canvas::Path::line(from, to);
+        frame.stroke(
+          &line,
+          Stroke::default()
+            .with_width(20.00)
+            .with_color(Color::BLACK)
+            .with_line_join(canvas::LineJoin::Round)
+            .with_line_cap(canvas::LineCap::Round),
+        );
+        frame.fill(&line, Color::BLACK);
+      }
     }
   }
 
