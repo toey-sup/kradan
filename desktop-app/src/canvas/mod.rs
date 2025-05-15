@@ -1,11 +1,12 @@
 use iced::widget::canvas;
-use iced::widget::canvas::Stroke;
+use iced::widget::canvas::event::{self, Event};
 use iced::widget::container;
 use iced::widget::container::Style;
-use iced::widget::mouse_area;
 use iced::Background;
 use iced::{mouse, Theme};
 use iced::{Color, Element, Length, Point, Rectangle, Renderer, Task};
+mod line;
+use line::Line;
 
 #[derive(Default)]
 pub struct Canvas {
@@ -14,9 +15,10 @@ pub struct Canvas {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
-  MousePress,
-  MouseRelease,
+  MouseClick(Point),
   MouseMove(Point),
+  MouseUp,
+  MouseLeave,
 }
 
 impl Canvas {
@@ -26,32 +28,35 @@ impl Canvas {
 
   pub fn update(&mut self, message: Message) -> Task<Message> {
     match message {
+      Message::MouseClick(point) => {
+        self.main_program.is_drawing = true;
+        self.main_program.add_point(point);
+        Task::done(Message::MouseClick(point))
+      }
+      Message::MouseLeave => {
+        self.main_program.is_drawing = false;
+        self.main_program.complete_stroke();
+        Task::done(Message::MouseLeave)
+      }
       Message::MouseMove(point) => {
-        self.main_program.handle_mouse_move(point);
-        Task::none()
+        if self.main_program.is_drawing {
+          self.main_program.add_point(point);
+        }
+        Task::done(Message::MouseMove(point))
       }
-      Message::MousePress => {
-        self.main_program.set_is_drawing(true);
-        Task::none()
-      }
-      Message::MouseRelease => {
-        self.main_program.set_is_drawing(false);
-        Task::none()
+      Message::MouseUp => {
+        self.main_program.is_drawing = false;
+        self.main_program.complete_stroke();
+        Task::done(Message::MouseUp)
       }
     }
   }
 
   pub fn view(&self) -> Element<Message> {
     container(
-      mouse_area(
-        canvas(&self.main_program)
-          .width(Length::Fill)
-          .height(Length::Fill),
-      )
-      .on_release(Message::MouseRelease)
-      .on_move(Message::MouseMove)
-      .on_exit(Message::MouseRelease)
-      .on_press(Message::MousePress),
+      canvas(&self.main_program)
+        .width(Length::Fill)
+        .height(Length::Fill),
     )
     .style(|_| Style {
       background: Some(Background::Color(Color::from_rgb(240.0, 240.0, 240.0))),
@@ -63,46 +68,65 @@ impl Canvas {
 
 #[derive(Debug)]
 struct MainCanvasProgram {
-  cache: canvas::Cache,
-  is_drawing: bool,
+  main_cache: canvas::Cache,
   points_set: Vec<Vec<Point>>,
+  current_stroke: Line,
+  is_drawing: bool,
 }
 
 impl Default for MainCanvasProgram {
   fn default() -> Self {
     MainCanvasProgram {
-      cache: canvas::Cache::default(),
+      main_cache: canvas::Cache::new(),
+      points_set: Vec::new(),
+      current_stroke: Line::new(),
       is_drawing: false,
-      points_set: vec![Vec::new()],
     }
   }
 }
 
 impl MainCanvasProgram {
-  pub fn set_is_drawing(&mut self, value: bool) {
-    if self
-      .points_set
-      .last()
-      .map(|last| last.len())
-      .unwrap_or(0 as usize)
-      != 0
-    {
-      self.points_set.push(Vec::new());
-    }
-    self.is_drawing = value
+  pub fn add_point(&mut self, point: Point) {
+    self.current_stroke.add_point(point);
   }
 
-  pub fn handle_mouse_move(&mut self, point: Point) {
-    if self.is_drawing {
-      let last_index = self.points_set.len() - 1;
-      self.points_set[last_index].push(point);
-      self.cache.clear();
-    }
+  pub fn complete_stroke(&mut self) {
+    self.points_set.push(self.current_stroke.points.clone());
+    self.current_stroke = Line::new();
+    self.main_cache.clear();
   }
 }
 
-impl<Message> canvas::Program<Message> for MainCanvasProgram {
+impl canvas::Program<Message> for MainCanvasProgram {
   type State = ();
+
+  fn update(
+    &self,
+    _state: &mut Self::State,
+    event: Event,
+    bounds: Rectangle,
+    cursor: mouse::Cursor,
+  ) -> (event::Status, Option<Message>) {
+    let Some(cursor_position) = cursor.position_in(bounds) else {
+      return (event::Status::Ignored, None);
+    };
+
+    match event {
+      Event::Mouse(mouse_event) => {
+        let message = match mouse_event {
+          mouse::Event::ButtonPressed(mouse::Button::Left) => {
+            Option::Some(Message::MouseClick(cursor_position))
+          }
+          mouse::Event::CursorMoved { position } => Option::Some(Message::MouseMove(position)),
+          mouse::Event::ButtonReleased(mouse::Button::Left) => Option::Some(Message::MouseUp),
+          mouse::Event::CursorLeft => Option::Some(Message::MouseLeave),
+          _ => None,
+        };
+        (event::Status::Captured, message)
+      }
+      _ => (event::Status::Ignored, None),
+    }
+  }
 
   fn draw(
     &self,
@@ -112,24 +136,22 @@ impl<Message> canvas::Program<Message> for MainCanvasProgram {
     bounds: Rectangle,
     _cursor: mouse::Cursor,
   ) -> Vec<canvas::Geometry> {
-    let picture = self.cache.draw(renderer, bounds.size(), |frame| {
-      for set in &self.points_set {
-        for i in 1..set.len() {
-          let from = set[i - 1];
-          let to = set[i];
-          // let start_circle = canvas::Path::circle(from, 10.00);
-          let line = canvas::Path::line(from, to);
-          // let end_circle = canvas::Path::circle(from, 10.00);
-          frame.stroke(
-            &line,
-            Stroke::default().with_width(20.00).with_color(Color::BLACK),
-          );
-          // frame.fill(&start_circle, Color::BLACK);
-          frame.fill(&line, Color::BLACK);
-          // frame.fill(&end_circle, Color::BLACK);
-        }
+    let main_geometry = self.main_cache.draw(renderer, bounds.size(), |frame| {
+      for points in &self.points_set {
+        Line::draw_from_points(frame, points);
       }
     });
-    vec![picture]
+    let mut current_stroke_geometry = self.current_stroke.draw(renderer, bounds);
+    current_stroke_geometry.push(main_geometry);
+    return current_stroke_geometry;
+  }
+
+  fn mouse_interaction(
+    &self,
+    _state: &Self::State,
+    _bounds: Rectangle,
+    _cursor: iced::advanced::mouse::Cursor,
+  ) -> iced::advanced::mouse::Interaction {
+    iced::advanced::mouse::Interaction::default()
   }
 }

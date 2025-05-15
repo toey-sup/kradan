@@ -1,5 +1,5 @@
 mod canvas;
-use iced::window::{self, Settings};
+use iced::window::Settings;
 
 use crate::canvas::Canvas;
 
