@@ -116,7 +116,6 @@ impl canvas::Program<Message> for MainCanvasProgram {
 
     match event {
       Event::Mouse(mouse_event) => {
-        println!("{:?}", mouse_event);
         let message = match mouse_event {
           mouse::Event::ButtonPressed(mouse::Button::Left) => {
             Option::Some(Message::MouseClick(cursor_position))
