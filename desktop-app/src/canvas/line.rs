@@ -42,6 +42,9 @@ impl Line {
     let last_segment_index: usize = self.segments.len() - 1;
     if self.segments[last_segment_index].points.len() >= MAX_CACHE_SIZE {
       let mut new_segment = LineSegment::with_group(self.cache_group);
+      if let Some(last_point) = self.segments[last_segment_index].points.last() {
+        new_segment.points.push(last_point.to_owned())
+      }
       new_segment.points.push(point);
       self.segments.push(new_segment);
     } else {
